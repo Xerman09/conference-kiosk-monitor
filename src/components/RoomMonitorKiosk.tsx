@@ -785,23 +785,23 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
       </main>
 
       {/* Right Column: Oversized Clock + Today's Full Schedule */}
-      <aside className="relative z-10 w-full lg:w-[370px] xl:w-[420px] 2xl:w-[460px] shrink-0 bg-[#050a16]/90 backdrop-blur-2xl flex flex-col justify-between p-7 sm:p-8">
+      <aside className="relative z-10 w-full lg:w-[400px] xl:w-[460px] 2xl:w-[500px] shrink-0 bg-[#050a16]/90 backdrop-blur-2xl flex flex-col justify-between p-7 sm:p-8">
         {/* Live Clock Header */}
         <div className="border-b border-white/[0.08] pb-6">
           <div className="flex items-baseline justify-between gap-2">
             <div className="flex items-baseline gap-1 font-mono tracking-tight tabular-nums">
-              <span className="text-5xl sm:text-6xl xl:text-[4rem] font-bold text-white leading-none">
+              <span className="text-6xl sm:text-7xl xl:text-[5.25rem] 2xl:text-[5.75rem] font-extrabold text-white leading-none">
                 {format(currentTime, "h:mm")}
               </span>
-              <span className="text-2xl sm:text-3xl font-medium text-slate-500">
+              <span className="text-3xl sm:text-4xl xl:text-[2.5rem] font-semibold text-slate-400 leading-none">
                 :{format(currentTime, "ss")}
               </span>
             </div>
-            <span className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1 font-mono text-sm font-bold text-indigo-200 uppercase">
+            <span className="rounded-xl border border-indigo-400/30 bg-indigo-500/15 px-3 py-1.5 font-mono text-base sm:text-lg xl:text-xl font-bold text-indigo-200 uppercase shrink-0">
               {format(currentTime, "a")}
             </span>
           </div>
-          <p className="mt-3 text-base sm:text-lg font-medium text-slate-300">
+          <p className="mt-3.5 text-lg sm:text-xl font-medium text-slate-300">
             {format(currentTime, "EEEE, MMMM d")}
             <span className="text-slate-500">
               , {format(currentTime, "yyyy")}
