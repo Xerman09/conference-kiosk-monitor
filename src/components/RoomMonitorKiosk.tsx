@@ -399,53 +399,54 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
             </div>
           ) : (
             <>
-              {/* Hero Grid: Status & Editorial Meeting Card (Left) + Chronograph Dial (Right) */}
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] 2xl:grid-cols-[minmax(0,1fr)_310px] gap-8 xl:gap-10 items-center">
-                <div className="min-w-0">
-                  {/* Status Eyebrow */}
-                  <div className="mb-3 flex flex-wrap items-center gap-3">
-                    <span
-                      className={`inline-flex items-center gap-2.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold uppercase tracking-[0.22em] border backdrop-blur-xl ${
-                        isOccupied
-                          ? "bg-rose-500/15 text-rose-200 border-rose-400/35"
-                          : "bg-emerald-500/15 text-emerald-200 border-emerald-400/35"
-                      }`}
-                    >
-                      <span className="relative flex h-2.5 w-2.5">
-                        {isOccupied && (
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
-                        )}
-                        <span
-                          className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
-                            isOccupied ? "bg-rose-500" : "bg-emerald-400"
-                          }`}
-                        />
-                      </span>
-                      {isOccupied ? "In Session" : "Available Now"}
-                    </span>
-
-                    {overlappingCount > 0 && (
-                      <span className="rounded-full border border-rose-400/25 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200">
-                        +{overlappingCount} overlapping{" "}
-                        {overlappingCount === 1 ? "booking" : "bookings"}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Monumental Status Headline */}
-                  <div
-                    className={`text-6xl sm:text-7xl xl:text-[7.25rem] 2xl:text-[8.5rem] font-black tracking-[-0.04em] leading-[0.92] bg-clip-text text-transparent ${
+              {/* Full-Width Status Eyebrow + Monumental Headline (never overlaps dial) */}
+              <div className="min-w-0">
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <span
+                    className={`inline-flex items-center gap-2.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold uppercase tracking-[0.22em] border backdrop-blur-xl ${
                       isOccupied
-                        ? "bg-gradient-to-br from-white via-rose-300 to-rose-500 drop-shadow-[0_8px_42px_rgba(244,63,94,0.32)]"
-                        : "bg-gradient-to-br from-white via-emerald-200 to-teal-400 drop-shadow-[0_8px_42px_rgba(16,185,129,0.28)]"
+                        ? "bg-rose-500/15 text-rose-200 border-rose-400/35"
+                        : "bg-emerald-500/15 text-emerald-200 border-emerald-400/35"
                     }`}
                   >
-                    {isOccupied ? "OCCUPIED" : "VACANT"}
-                  </div>
+                    <span className="relative flex h-2.5 w-2.5">
+                      {isOccupied && (
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                      )}
+                      <span
+                        className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                          isOccupied ? "bg-rose-500" : "bg-emerald-400"
+                        }`}
+                      />
+                    </span>
+                    {isOccupied ? "In Session" : "Available Now"}
+                  </span>
 
+                  {overlappingCount > 0 && (
+                    <span className="rounded-full border border-rose-400/25 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200">
+                      +{overlappingCount} overlapping{" "}
+                      {overlappingCount === 1 ? "booking" : "bookings"}
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  className={`text-[clamp(3.25rem,6.4vw,7.5rem)] font-black tracking-[-0.04em] leading-[0.94] bg-clip-text text-transparent ${
+                    isOccupied
+                      ? "bg-gradient-to-br from-white via-rose-300 to-rose-500 drop-shadow-[0_8px_42px_rgba(244,63,94,0.32)]"
+                      : "bg-gradient-to-br from-white via-emerald-200 to-teal-400 drop-shadow-[0_8px_42px_rgba(16,185,129,0.28)]"
+                  }`}
+                >
+                  {isOccupied ? "OCCUPIED" : "VACANT"}
+                </div>
+              </div>
+
+              {/* Clean 2-Column Row Below Headline: Meeting Card (Left) + Chronograph Dial (Right) */}
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_240px] 2xl:grid-cols-[minmax(0,1fr)_280px] gap-6 xl:gap-8 items-center">
+                <div className="min-w-0">
                   {/* Editorial Current Meeting or Open Card */}
                   {currentMeeting ? (
-                    <div className="relative mt-7 overflow-hidden rounded-3xl border border-white/[0.11] bg-gradient-to-b from-white/[0.06] to-white/[0.025] backdrop-blur-2xl p-6 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+                    <div className="relative overflow-hidden rounded-3xl border border-white/[0.11] bg-gradient-to-b from-white/[0.06] to-white/[0.025] backdrop-blur-2xl p-6 sm:p-7 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
                       {/* Subtle Top Specular Edge */}
                       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-rose-300/40 to-transparent" />
 
@@ -505,7 +506,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                       )}
                     </div>
                   ) : (
-                    <div className="relative mt-7 overflow-hidden rounded-3xl border border-emerald-400/20 bg-gradient-to-b from-white/[0.055] to-white/[0.02] backdrop-blur-2xl p-6 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
+                    <div className="relative overflow-hidden rounded-3xl border border-emerald-400/20 bg-gradient-to-b from-white/[0.055] to-white/[0.02] backdrop-blur-2xl p-6 sm:p-7 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
                       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
 
                       <div className="flex items-center gap-3 text-emerald-300 mb-2">
@@ -539,8 +540,8 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                 </div>
 
                 {/* Chronograph Countdown / Status Dial (xl+ screens) */}
-                <div className="hidden xl:flex flex-col items-center justify-center">
-                  <div className="relative flex h-[272px] w-[272px] 2xl:h-[296px] 2xl:w-[296px] items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] to-white/[0.015] border border-white/[0.09] shadow-[0_28px_72px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
+                <div className="hidden xl:flex flex-col items-center justify-center shrink-0">
+                  <div className="relative flex h-[232px] w-[232px] 2xl:h-[272px] 2xl:w-[272px] items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] to-white/[0.015] border border-white/[0.09] shadow-[0_28px_72px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
                     <svg
                       className="h-full w-full p-2.5"
                       viewBox="0 0 240 240"
