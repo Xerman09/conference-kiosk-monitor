@@ -41,36 +41,37 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen w-full bg-slate-950 text-white flex items-center justify-center p-6 overflow-hidden">
-      {/* Subtle Background Glow */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(99,102,241,0.18),_transparent_55%)]" />
+    <div className="relative min-h-screen w-full bg-[#030712] text-white flex items-center justify-center p-6 overflow-hidden">
+      {/* Architectural Dot Grid + Ambient Glow */}
+      <div className="pointer-events-none absolute inset-0 kiosk-grid-bg opacity-60" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,_rgba(99,102,241,0.22),_transparent_65%),radial-gradient(ellipse_40%_40%_at_80%_100%,_rgba(16,185,129,0.10),_transparent_60%)]" />
 
       <div className="relative z-10 w-full max-w-md">
         {/* Branding */}
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 shadow-lg shadow-indigo-500/10 mb-4">
+          <div className="flex h-15 w-15 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-indigo-600/10 border border-indigo-400/30 text-indigo-300 shadow-[0_0_32px_rgba(99,102,241,0.25)] mb-4">
             <Monitor className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
             Conference Room Kiosk
           </h1>
-          <p className="mt-1.5 text-sm text-slate-400">
-            Administrator sign-in required to select or configure a room display
+          <p className="mt-2 text-sm text-slate-400 max-w-xs">
+            Sign in with an administrator account to select or configure a room display.
           </p>
         </div>
 
-        {/* Login Card */}
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/80 backdrop-blur-xl p-8 shadow-2xl">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-300 mb-6">
-            <Lock className="h-3.5 w-3.5" />
-            Admin Verification
+        {/* Elevated Glass Login Card */}
+        <div className="rounded-3xl border border-white/10 bg-white/[0.035] backdrop-blur-2xl p-8 shadow-[0_24px_70px_rgba(0,0,0,0.55)]">
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/25 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-300 mb-6">
+            <Lock className="h-3 w-3" />
+            Admin Access
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
               <div
                 role="alert"
-                className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+                className="rounded-2xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
               >
                 {error}
               </div>
@@ -79,7 +80,7 @@ export default function AdminLoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2"
+                className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-2"
               >
                 Admin Email
               </label>
@@ -92,14 +93,14 @@ export default function AdminLoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@company.com"
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+                className="w-full rounded-xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
               />
             </div>
 
             <div>
               <label
                 htmlFor="password"
-                className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2"
+                className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-2"
               >
                 Password
               </label>
@@ -112,12 +113,12 @@ export default function AdminLoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-11 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950/80 px-4 py-3 pr-11 text-sm text-white placeholder-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:text-slate-200 cursor-pointer transition-colors"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
@@ -132,16 +133,16 @@ export default function AdminLoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors shadow-lg shadow-indigo-600/20 cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 px-4 py-3.5 text-sm font-semibold text-white hover:from-indigo-400 hover:to-indigo-500 disabled:opacity-50 transition-all shadow-[0_10px_28px_rgba(99,102,241,0.35)] cursor-pointer"
             >
               <ShieldCheck className="h-4 w-4" />
-              {isSubmitting ? "Signing in..." : "Sign In as Admin"}
+              {isSubmitting ? "Verifying..." : "Sign In as Admin"}
             </button>
           </form>
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
-          Only accounts with <span className="font-mono text-slate-400">isAdmin = 1</span> in the database can unlock the room selector.
+          Authorized administrators (<span className="font-mono text-slate-400">isAdmin = 1</span>) only.
         </p>
       </div>
     </div>

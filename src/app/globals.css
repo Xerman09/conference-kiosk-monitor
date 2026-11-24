@@ -18,7 +18,13 @@ body {
   color: var(--foreground);
 }
 
-/* Subtle custom scrollbar for upcoming meetings list on smaller screens */
+/* Architectural subtle dot grid overlay for signage depth */
+.kiosk-grid-bg {
+  background-image: radial-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Subtle custom scrollbar for upcoming meetings list */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -28,6 +34,10 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.22);
   border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
 }
