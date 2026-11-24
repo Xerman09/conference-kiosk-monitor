@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   differenceInMinutes,
+  differenceInSeconds,
   format,
   isAfter,
   isBefore,
@@ -16,6 +17,8 @@ import {
   CheckCircle2,
   Clock,
   Lock,
+  Maximize2,
+  Minimize2,
   Radio,
   RefreshCw,
   Sparkles,
@@ -38,6 +41,27 @@ function formatDurationHuman(totalMinutes: number): string {
   return `${hours}h ${rem}m`;
 }
 
+function formatCountdownClock(totalSeconds: number): {
+  primary: string;
+  label: string;
+} {
+  const safe = Math.max(0, totalSeconds);
+  const hours = Math.floor(safe / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+
+  if (hours > 0) {
+    return {
+      primary: `${hours}:${String(mins).padStart(2, "0")}`,
+      label: "HRS : MINS LEFT",
+    };
+  }
+  return {
+    primary: `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
+    label: "MINS : SECS LEFT",
+  };
+}
+
 function getInitials(name: string): string {
   return name
     .trim()
@@ -46,6 +70,9 @@ function getInitials(name: string): string {
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 }
+
+const TIMELINE_HOURS = [8, 10, 12, 14, 16, 18];
+const DIAL_TICKS = Array.from({ length: 60 }, (_, i) => i);
 
 export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
   const {
@@ -61,6 +88,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
 
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
   const [unlockOpen, setUnlockOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Live 1-second clock
   useEffect(() => {
@@ -68,6 +96,16 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Track fullscreen state
+  useEffect(() => {
+    function handleFsChange() {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
   // Screen Wake Lock so wall-mounted tablets stay awake
@@ -123,6 +161,18 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  async function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Ignore fullscreen denial
+    }
+  }
+
   const todaysMeetings = useMemo(() => {
     return meetings
       .filter((req) => {
@@ -151,6 +201,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
   }, [meetings, currentTime]);
 
   const currentMeeting = activeMeetings[0] ?? null;
+  const overlappingCount = Math.max(0, activeMeetings.length - 1);
 
   const upcomingMeetings = useMemo(() => {
     return todaysMeetings.filter((req) => {
@@ -167,17 +218,17 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
   const meetingProgress = useMemo(() => {
     if (!currentMeeting) return null;
     try {
-      const start = parseISO(currentMeeting.start_time).getTime();
-      const end = parseISO(currentMeeting.end_time).getTime();
-      const now = currentTime.getTime();
-      const total = Math.max(end - start, 1);
-      const elapsed = Math.min(Math.max(now - start, 0), total);
-      const percent = Math.round((elapsed / total) * 100);
-      const minsLeft = Math.max(
-        1,
-        differenceInMinutes(parseISO(currentMeeting.end_time), currentTime) + 1
+      const startDate = parseISO(currentMeeting.start_time);
+      const endDate = parseISO(currentMeeting.end_time);
+      const total = Math.max(endDate.getTime() - startDate.getTime(), 1);
+      const elapsed = Math.min(
+        Math.max(currentTime.getTime() - startDate.getTime(), 0),
+        total
       );
-      return { percent, minsLeft };
+      const percent = Math.round((elapsed / total) * 100);
+      const secsLeft = Math.max(0, differenceInSeconds(endDate, currentTime));
+      const durationMins = Math.max(1, differenceInMinutes(endDate, startDate));
+      return { percent, secsLeft, durationMins };
     } catch {
       return null;
     }
@@ -214,7 +265,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
       const e = parseISO(m.end_time);
       const left = toPct(s);
       const right = toPct(e);
-      const width = Math.max(right - left, 1.5);
+      const width = Math.max(right - left, 1.8);
       const isActive = isWithinInterval(currentTime, { start: s, end: e });
       const isPast = isBefore(e, currentTime);
       return { id: m.id, title: m.title, left, width, isActive, isPast };
@@ -227,60 +278,71 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
     return { blocks, nowPct, showNowMarker };
   }, [todaysMeetings, currentTime]);
 
-  // SVG Ring Geometry
-  const ringRadius = 94;
+  // Chronograph SVG Ring Geometry
+  const ringRadius = 104;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset =
     isOccupied && meetingProgress
       ? ringCircumference * (1 - meetingProgress.percent / 100)
       : 0;
 
+  const countdown = meetingProgress
+    ? formatCountdownClock(meetingProgress.secsLeft)
+    : null;
+
   return (
     <div
-      className={`relative min-h-screen w-full overflow-x-hidden select-none bg-[#030712] text-white flex flex-col lg:flex-row transition-colors duration-700 ${
+      className={`relative min-h-screen lg:h-screen w-full overflow-x-hidden lg:overflow-hidden select-none bg-[#02050d] text-white flex flex-col lg:flex-row transition-colors duration-1000 ${
         unlockOpen ? "cursor-auto" : "cursor-none"
       }`}
     >
-      {/* Left Signature Status Accent Rail */}
+      {/* Signature Left & Top Luminous Status Rails */}
       <div
-        className={`pointer-events-none fixed lg:absolute left-0 top-0 bottom-0 w-2 z-30 transition-all duration-700 ${
+        className={`pointer-events-none fixed lg:absolute left-0 top-0 bottom-0 w-2 z-30 transition-all duration-1000 ${
           isOccupied
-            ? "bg-gradient-to-b from-rose-400 via-rose-500 to-red-600 shadow-[0_0_28px_rgba(244,63,94,0.85)]"
-            : "bg-gradient-to-b from-emerald-300 via-emerald-400 to-teal-500 shadow-[0_0_28px_rgba(16,185,129,0.75)]"
+            ? "bg-gradient-to-b from-rose-300 via-rose-500 to-red-600 shadow-[0_0_32px_rgba(244,63,94,0.9)]"
+            : "bg-gradient-to-b from-emerald-200 via-emerald-400 to-teal-500 shadow-[0_0_32px_rgba(16,185,129,0.85)]"
+        }`}
+      />
+      <div
+        className={`pointer-events-none absolute left-0 right-0 top-0 h-[2px] z-30 transition-all duration-1000 ${
+          isOccupied
+            ? "bg-gradient-to-r from-rose-400 via-rose-500/40 to-transparent"
+            : "bg-gradient-to-r from-emerald-300 via-emerald-400/40 to-transparent"
         }`}
       />
 
       {/* Subtle Architectural Dot Grid */}
-      <div className="pointer-events-none absolute inset-0 kiosk-grid-bg opacity-60" />
+      <div className="pointer-events-none absolute inset-0 kiosk-grid-bg opacity-55" />
 
-      {/* Layered Ambient Status Glow */}
+      {/* Breathing Layered Ambient Aurora */}
       <div
-        className={`pointer-events-none absolute inset-0 transition-opacity duration-1000 ${
+        className={`pointer-events-none absolute inset-0 animate-kiosk-breathe transition-all duration-1000 ${
           isOccupied
-            ? "bg-[radial-gradient(ellipse_75%_65%_at_18%_22%,_rgba(225,29,72,0.28),_transparent_65%),radial-gradient(ellipse_55%_55%_at_68%_78%,_rgba(244,63,94,0.14),_transparent_70%)]"
-            : "bg-[radial-gradient(ellipse_75%_65%_at_18%_22%,_rgba(16,185,129,0.24),_transparent_65%),radial-gradient(ellipse_55%_55%_at_68%_78%,_rgba(20,184,166,0.12),_transparent_70%)]"
+            ? "bg-[radial-gradient(ellipse_70%_60%_at_16%_20%,_rgba(225,29,72,0.30),_transparent_62%),radial-gradient(ellipse_48%_52%_at_64%_76%,_rgba(251,113,133,0.13),_transparent_68%)]"
+            : "bg-[radial-gradient(ellipse_70%_60%_at_16%_20%,_rgba(16,185,129,0.26),_transparent_62%),radial-gradient(ellipse_48%_52%_at_64%_76%,_rgba(45,212,191,0.12),_transparent_68%)]"
         }`}
       />
 
-      {/* Left Main Stage */}
-      <main className="relative z-10 flex-1 min-w-0 flex flex-col justify-between pl-10 pr-8 py-8 sm:pl-14 sm:pr-12 sm:py-10 xl:pl-16 xl:pr-14 xl:py-12 border-b lg:border-b-0 lg:border-r border-white/[0.08]">
-        {/* Top Bar: Room Identity + Live Connection Badge */}
+      {/* Left Main Signage Stage */}
+      <main className="relative z-10 flex-1 min-w-0 flex flex-col justify-between pl-10 pr-8 py-7 sm:pl-14 sm:pr-12 sm:py-9 xl:pl-16 xl:pr-14 xl:py-10 border-b lg:border-b-0 lg:border-r border-white/[0.08]">
+        {/* Top Bar: Room Identity + Live Telemetry Pill */}
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div
-              className={`flex h-13 w-13 items-center justify-center rounded-2xl border backdrop-blur-md transition-colors duration-700 ${
+              className={`flex h-13 w-13 items-center justify-center rounded-2xl border backdrop-blur-xl transition-all duration-700 ${
                 isOccupied
-                  ? "bg-rose-500/15 border-rose-400/30 text-rose-300 shadow-[0_0_24px_rgba(244,63,94,0.2)]"
-                  : "bg-emerald-500/15 border-emerald-400/30 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.2)]"
+                  ? "bg-rose-500/15 border-rose-400/35 text-rose-200 shadow-[0_0_28px_rgba(244,63,94,0.25)]"
+                  : "bg-emerald-500/15 border-emerald-400/35 text-emerald-200 shadow-[0_0_28px_rgba(16,185,129,0.25)]"
               }`}
             >
               <Building2 className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
                 Conference Room
               </p>
-              <h1 className="text-3xl sm:text-4xl xl:text-5xl font-bold tracking-tight text-white">
+              <h1 className="text-3xl sm:text-4xl xl:text-[2.75rem] font-bold tracking-tight text-white leading-tight">
                 {room
                   ? room.name
                   : isLoading
@@ -292,21 +354,21 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
 
           <div className="flex items-center gap-2.5">
             {isReconnecting ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/35 bg-amber-500/15 px-4 py-1.5 text-xs font-semibold text-amber-200 backdrop-blur-md">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/35 bg-amber-500/15 px-4 py-1.5 text-xs font-semibold text-amber-200 backdrop-blur-xl">
                 <WifiOff className="h-3.5 w-3.5 animate-pulse" />
                 Reconnecting...
               </div>
             ) : isLive ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 backdrop-blur-md">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold tracking-wider text-emerald-300 backdrop-blur-xl shadow-[0_0_18px_rgba(16,185,129,0.15)]">
                 <Radio className="h-3.5 w-3.5 animate-pulse" />
-                LIVE
+                LIVE SYNC
               </div>
             ) : null}
           </div>
         </header>
 
-        {/* Center Hero Area */}
-        <section className="my-8 lg:my-0 flex flex-col gap-8">
+        {/* Center Hero Stage */}
+        <section className="my-8 lg:my-0 flex flex-col gap-7 xl:gap-9">
           {isLoading ? (
             <div className="space-y-5">
               <div className="h-8 w-40 rounded-full bg-white/[0.06] animate-pulse" />
@@ -337,13 +399,13 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
             </div>
           ) : (
             <>
-              {/* Balanced 2-Part Hero: Status + Meeting Card (Left) & Countdown Ring (Right) */}
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_290px] gap-8 items-center">
+              {/* Hero Grid: Status & Editorial Meeting Card (Left) + Chronograph Dial (Right) */}
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] 2xl:grid-cols-[minmax(0,1fr)_310px] gap-8 xl:gap-10 items-center">
                 <div className="min-w-0">
-                  {/* Status Pill */}
-                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                  {/* Status Eyebrow */}
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
                     <span
-                      className={`inline-flex items-center gap-2.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold uppercase tracking-[0.2em] border backdrop-blur-md ${
+                      className={`inline-flex items-center gap-2.5 rounded-full px-4 py-1.5 text-xs sm:text-sm font-bold uppercase tracking-[0.22em] border backdrop-blur-xl ${
                         isOccupied
                           ? "bg-rose-500/15 text-rose-200 border-rose-400/35"
                           : "bg-emerald-500/15 text-emerald-200 border-emerald-400/35"
@@ -362,103 +424,90 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                       {isOccupied ? "In Session" : "Available Now"}
                     </span>
 
-                    {isOccupied && meetingProgress && (
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-300 backdrop-blur-md">
-                        Ends in{" "}
-                        <strong className="text-white">
-                          {formatDurationHuman(meetingProgress.minsLeft)}
-                        </strong>
-                      </span>
-                    )}
-
-                    {!isOccupied && freeMinutesUntilNext && (
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-300 backdrop-blur-md">
-                        Free for{" "}
-                        <strong className="text-emerald-300">
-                          {formatDurationHuman(freeMinutesUntilNext)}
-                        </strong>
+                    {overlappingCount > 0 && (
+                      <span className="rounded-full border border-rose-400/25 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200">
+                        +{overlappingCount} overlapping{" "}
+                        {overlappingCount === 1 ? "booking" : "bookings"}
                       </span>
                     )}
                   </div>
 
-                  {/* Monumental Status Word */}
+                  {/* Monumental Status Headline */}
                   <div
-                    className={`text-6xl sm:text-7xl xl:text-[7.5rem] 2xl:text-[8.5rem] font-black tracking-tighter leading-[0.94] bg-clip-text text-transparent ${
+                    className={`text-6xl sm:text-7xl xl:text-[7.25rem] 2xl:text-[8.5rem] font-black tracking-[-0.04em] leading-[0.92] bg-clip-text text-transparent ${
                       isOccupied
-                        ? "bg-gradient-to-r from-rose-300 via-rose-500 to-red-500 drop-shadow-[0_0_40px_rgba(244,63,94,0.28)]"
-                        : "bg-gradient-to-r from-emerald-200 via-emerald-400 to-teal-300 drop-shadow-[0_0_40px_rgba(16,185,129,0.25)]"
+                        ? "bg-gradient-to-br from-white via-rose-300 to-rose-500 drop-shadow-[0_8px_42px_rgba(244,63,94,0.32)]"
+                        : "bg-gradient-to-br from-white via-emerald-200 to-teal-400 drop-shadow-[0_8px_42px_rgba(16,185,129,0.28)]"
                     }`}
                   >
                     {isOccupied ? "OCCUPIED" : "VACANT"}
                   </div>
 
-                  {/* Current Meeting or Available Card */}
+                  {/* Editorial Current Meeting or Open Card */}
                   {currentMeeting ? (
-                    <div className="mt-7 rounded-3xl border border-rose-400/25 bg-white/[0.04] backdrop-blur-xl p-6 sm:p-8 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                    <div className="relative mt-7 overflow-hidden rounded-3xl border border-white/[0.11] bg-gradient-to-b from-white/[0.06] to-white/[0.025] backdrop-blur-2xl p-6 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+                      {/* Subtle Top Specular Edge */}
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-rose-300/40 to-transparent" />
+
                       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                        <span className="inline-flex items-center gap-2 rounded-xl bg-rose-500/15 border border-rose-400/25 px-3.5 py-1.5 text-sm sm:text-base font-semibold text-rose-200">
+                        <span className="inline-flex items-center gap-2 rounded-xl bg-rose-500/15 border border-rose-400/25 px-3.5 py-1.5 text-sm sm:text-base font-semibold text-rose-100">
                           <Clock className="h-4 w-4 text-rose-400" />
                           {format(parseISO(currentMeeting.start_time), "h:mm a")}{" "}
                           – {format(parseISO(currentMeeting.end_time), "h:mm a")}
                         </span>
+
                         {meetingProgress && (
-                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                            {meetingProgress.percent}% elapsed
+                          <span className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold tracking-wider text-slate-300">
+                            {formatDurationHuman(meetingProgress.durationMins)}{" "}
+                            session
                           </span>
                         )}
                       </div>
 
-                      <h2 className="text-3xl sm:text-4xl xl:text-[2.75rem] font-bold text-white leading-tight tracking-tight">
+                      <h2 className="text-3xl sm:text-4xl xl:text-[2.75rem] font-bold text-white leading-[1.1] tracking-tight">
                         {currentMeeting.title}
                       </h2>
 
                       {currentMeeting.purpose && (
-                        <p className="mt-2.5 text-base sm:text-lg text-slate-300/90 line-clamp-2">
+                        <p className="mt-3 text-base sm:text-lg text-slate-300/90 line-clamp-2">
                           {currentMeeting.purpose}
                         </p>
                       )}
 
                       {currentMeeting.requested_by_name && (
-                        <div className="mt-5 inline-flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-2.5">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500/20 text-xs font-bold text-rose-200 border border-rose-400/30">
-                            {getInitials(currentMeeting.requested_by_name)}
+                        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 pt-5 border-t border-white/[0.08]">
+                          <div className="inline-flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-rose-400/30 to-orange-400/20 text-xs font-bold text-rose-100 border border-rose-300/30 shadow-inner">
+                              {getInitials(currentMeeting.requested_by_name)}
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                Organizer
+                              </p>
+                              <p className="text-sm sm:text-base font-semibold text-white">
+                                {currentMeeting.requested_by_name}
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-sm sm:text-base">
-                            <span className="text-slate-400">Organizer · </span>
-                            <span className="font-semibold text-white">
-                              {currentMeeting.requested_by_name}
-                            </span>
-                          </div>
-                        </div>
-                      )}
 
-                      {meetingProgress && (
-                        <div className="mt-6">
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/[0.08]">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-rose-500 via-rose-400 to-orange-400 shadow-[0_0_16px_rgba(244,63,94,0.7)] transition-all duration-1000"
-                              style={{ width: `${meetingProgress.percent}%` }}
-                            />
-                          </div>
-                          <div className="mt-2 flex items-center justify-between text-xs font-mono text-slate-400">
-                            <span>
-                              {format(
-                                parseISO(currentMeeting.start_time),
-                                "h:mm a"
-                              )}
-                            </span>
-                            <span>
-                              {format(
-                                parseISO(currentMeeting.end_time),
-                                "h:mm a"
-                              )}
-                            </span>
-                          </div>
+                          {/* Compact progress pill for <xl screens where dial is hidden */}
+                          {meetingProgress && countdown && (
+                            <div className="xl:hidden text-right">
+                              <p className="font-mono text-lg font-bold text-rose-200">
+                                {countdown.primary}
+                              </p>
+                              <p className="text-[10px] font-semibold tracking-widest text-slate-400">
+                                {countdown.label}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="mt-7 rounded-3xl border border-emerald-400/20 bg-white/[0.035] backdrop-blur-xl p-6 sm:p-8 shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
+                    <div className="relative mt-7 overflow-hidden rounded-3xl border border-emerald-400/20 bg-gradient-to-b from-white/[0.055] to-white/[0.02] backdrop-blur-2xl p-6 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
+
                       <div className="flex items-center gap-3 text-emerald-300 mb-2">
                         <CheckCircle2 className="h-6 w-6" />
                         <span className="text-xl sm:text-2xl font-semibold text-white">
@@ -466,9 +515,9 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                         </span>
                       </div>
                       {nextMeeting ? (
-                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-slate-950/50 px-5 py-4">
+                        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-slate-950/60 px-5 py-4">
                           <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                               Up Next
                             </p>
                             <p className="text-lg sm:text-xl font-semibold text-white mt-0.5">
@@ -489,91 +538,129 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                   )}
                 </div>
 
-                {/* Right-of-Hero Circular Countdown / Status Ring (Desktop/TV) */}
+                {/* Chronograph Countdown / Status Dial (xl+ screens) */}
                 <div className="hidden xl:flex flex-col items-center justify-center">
-                  <div className="relative flex h-60 w-60 2xl:h-68 2xl:w-68 items-center justify-center rounded-full bg-white/[0.02] border border-white/[0.06] shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                  <div className="relative flex h-[272px] w-[272px] 2xl:h-[296px] 2xl:w-[296px] items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] to-white/[0.015] border border-white/[0.09] shadow-[0_28px_72px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
                     <svg
-                      className="h-full w-full -rotate-90 p-3"
-                      viewBox="0 0 220 220"
+                      className="h-full w-full p-2.5"
+                      viewBox="0 0 240 240"
                     >
                       <defs>
                         <linearGradient
-                          id="kioskRingOccupied"
+                          id="kioskDialOccupied"
                           x1="0%"
                           y1="0%"
                           x2="100%"
                           y2="100%"
                         >
-                          <stop offset="0%" stopColor="#fb7185" />
-                          <stop offset="55%" stopColor="#f43f5e" />
+                          <stop offset="0%" stopColor="#fda4af" />
+                          <stop offset="50%" stopColor="#f43f5e" />
                           <stop offset="100%" stopColor="#fb923c" />
                         </linearGradient>
                         <linearGradient
-                          id="kioskRingVacant"
+                          id="kioskDialVacant"
                           x1="0%"
                           y1="0%"
                           x2="100%"
                           y2="100%"
                         >
-                          <stop offset="0%" stopColor="#6ee7b7" />
+                          <stop offset="0%" stopColor="#a7f3d0" />
+                          <stop offset="50%" stopColor="#34d399" />
                           <stop offset="100%" stopColor="#14b8a6" />
                         </linearGradient>
                       </defs>
+
+                      {/* Precision outer dial ticks */}
+                      <g>
+                        {DIAL_TICKS.map((tick) => {
+                          const angle = (tick / 60) * 360;
+                          const isMajor = tick % 5 === 0;
+                          return (
+                            <line
+                              key={tick}
+                              x1="120"
+                              y1={isMajor ? "5" : "8"}
+                              x2="120"
+                              y2="12"
+                              stroke={
+                                isMajor
+                                  ? "rgba(255,255,255,0.28)"
+                                  : "rgba(255,255,255,0.10)"
+                              }
+                              strokeWidth={isMajor ? "1.6" : "1"}
+                              strokeLinecap="round"
+                              transform={`rotate(${angle} 120 120)`}
+                            />
+                          );
+                        })}
+                      </g>
+
+                      {/* Background track */}
                       <circle
-                        cx="110"
-                        cy="110"
+                        cx="120"
+                        cy="120"
                         r={ringRadius}
                         fill="none"
-                        stroke="rgba(255,255,255,0.07)"
-                        strokeWidth="12"
+                        stroke="rgba(255,255,255,0.06)"
+                        strokeWidth="10"
+                        transform="rotate(-90 120 120)"
                       />
+
+                      {/* Active glowing progress arc */}
                       <circle
-                        cx="110"
-                        cy="110"
+                        cx="120"
+                        cy="120"
                         r={ringRadius}
                         fill="none"
                         stroke={
                           isOccupied
-                            ? "url(#kioskRingOccupied)"
-                            : "url(#kioskRingVacant)"
+                            ? "url(#kioskDialOccupied)"
+                            : "url(#kioskDialVacant)"
                         }
-                        strokeWidth="12"
+                        strokeWidth="10"
                         strokeLinecap="round"
                         strokeDasharray={ringCircumference}
                         strokeDashoffset={ringOffset}
+                        transform="rotate(-90 120 120)"
                         className="transition-all duration-1000"
+                        style={{
+                          filter: isOccupied
+                            ? "drop-shadow(0 0 10px rgba(244,63,94,0.65))"
+                            : "drop-shadow(0 0 10px rgba(52,211,153,0.55))",
+                        }}
                       />
                     </svg>
 
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-                      {isOccupied && meetingProgress && currentMeeting ? (
+                    {/* Center Readout */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8">
+                      {isOccupied && countdown && currentMeeting ? (
                         <>
-                          <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-rose-300/90">
-                            Remaining
+                          <span className="font-mono text-5xl 2xl:text-[3.4rem] font-bold tracking-tight text-white tabular-nums leading-none">
+                            {countdown.primary}
                           </span>
-                          <span className="mt-1 font-mono text-4xl font-bold tracking-tight text-white">
-                            {formatDurationHuman(meetingProgress.minsLeft)}
+                          <span className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.22em] text-rose-300/90">
+                            {countdown.label}
                           </span>
-                          <span className="mt-2 text-xs text-slate-400">
-                            Until{" "}
-                            <strong className="text-slate-200">
+                          <div className="mt-3 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                            Ends{" "}
+                            <strong className="text-white">
                               {format(
                                 parseISO(currentMeeting.end_time),
                                 "h:mm a"
                               )}
                             </strong>
-                          </span>
+                          </div>
                         </>
                       ) : (
                         <>
-                          <CheckCircle2 className="h-9 w-9 text-emerald-400 mb-2" />
-                          <span className="text-2xl font-bold tracking-tight text-white">
+                          <CheckCircle2 className="h-10 w-10 text-emerald-400 mb-2" />
+                          <span className="text-3xl font-bold tracking-tight text-white">
                             {freeMinutesUntilNext
                               ? formatDurationHuman(freeMinutesUntilNext)
                               : "All Day"}
                           </span>
-                          <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">
-                            Available
+                          <span className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/85">
+                            Open Window
                           </span>
                         </>
                       )}
@@ -582,39 +669,84 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                 </div>
               </div>
 
-              {/* Full-Width Today's Visual Timeline Strip (8 AM – 6 PM) */}
-              <div className="w-full rounded-2xl border border-white/[0.07] bg-white/[0.025] backdrop-blur-md px-5 py-4">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">
+              {/* Architectural Full-Width Timeline Strip (8 AM – 6 PM) */}
+              <div className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.025] backdrop-blur-xl px-6 pt-5 pb-4">
+                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-7">
                   <span>Today&apos;s Timeline</span>
-                  <span className="font-mono text-slate-300">
-                    {format(currentTime, "h:mm a")} · 8 AM – 6 PM
-                  </span>
+                  <div className="flex items-center gap-4 text-[11px] font-medium normal-case tracking-normal text-slate-400">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-rose-500" />
+                      Active
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                      Upcoming
+                    </span>
+                  </div>
                 </div>
-                <div className="relative h-4 w-full rounded-full bg-white/[0.07] border border-white/[0.06] overflow-hidden">
-                  {timeline.blocks.map((block) => (
-                    <div
-                      key={block.id}
-                      title={block.title}
-                      className={`absolute top-0 bottom-0 rounded-full transition-all ${
-                        block.isActive
-                          ? "bg-gradient-to-r from-rose-500 to-orange-400 shadow-[0_0_14px_rgba(244,63,94,0.85)] z-10"
-                          : block.isPast
-                          ? "bg-slate-600/50"
-                          : "bg-indigo-400/75"
-                      }`}
-                      style={{
-                        left: `${block.left}%`,
-                        width: `${block.width}%`,
-                      }}
-                    />
-                  ))}
+
+                {/* Track with Floating NOW Pill */}
+                <div className="relative">
                   {timeline.showNowMarker && (
                     <div
-                      className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_10px_#ffffff] z-20"
+                      className="absolute -top-7 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none"
                       style={{ left: `${timeline.nowPct}%` }}
-                    />
+                    >
+                      <span className="rounded-md bg-white px-2 py-0.5 font-mono text-[10px] font-bold text-slate-950 shadow-[0_4px_14px_rgba(255,255,255,0.45)] whitespace-nowrap">
+                        {format(currentTime, "h:mm a")}
+                      </span>
+                    </div>
                   )}
+
+                  <div className="relative h-7 w-full rounded-xl bg-white/[0.05] border border-white/[0.07] overflow-hidden">
+                    {/* Subtle hourly vertical gridlines */}
+                    {TIMELINE_HOURS.slice(1, -1).map((hour) => {
+                      const pct = ((hour - 8) / 10) * 100;
+                      return (
+                        <div
+                          key={hour}
+                          className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/[0.07]"
+                          style={{ left: `${pct}%` }}
+                        />
+                      );
+                    })}
+
+                    {/* Booking Segments */}
+                    {timeline.blocks.map((block) => (
+                      <div
+                        key={block.id}
+                        title={block.title}
+                        className={`absolute top-1 bottom-1 rounded-lg flex items-center px-2.5 overflow-hidden transition-all ${
+                          block.isActive
+                            ? "bg-gradient-to-r from-rose-500/90 to-orange-400/90 shadow-[0_0_16px_rgba(244,63,94,0.65)] z-10"
+                            : block.isPast
+                            ? "bg-slate-600/45"
+                            : "bg-indigo-500/75"
+                        }`}
+                        style={{
+                          left: `${block.left}%`,
+                          width: `${block.width}%`,
+                        }}
+                      >
+                        {block.width >= 10 && (
+                          <span className="truncate text-[11px] font-semibold text-white drop-shadow-sm">
+                            {block.title}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Glowing White NOW Needle */}
+                    {timeline.showNowMarker && (
+                      <div
+                        className="absolute top-0 bottom-0 w-[2.5px] bg-white shadow-[0_0_12px_#ffffff] z-20"
+                        style={{ left: `${timeline.nowPct}%` }}
+                      />
+                    )}
+                  </div>
                 </div>
+
+                {/* Hour Axis */}
                 <div className="mt-2.5 flex justify-between text-xs font-mono text-slate-400">
                   <span>8 AM</span>
                   <span>10 AM</span>
@@ -628,7 +760,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
           )}
         </section>
 
-        {/* Bottom Subtle Metadata Footer */}
+        {/* Bottom Subtle Telemetry Footer */}
         <footer className="flex items-center justify-between text-xs text-slate-500">
           <span className="inline-flex items-center gap-2">
             <span
@@ -653,26 +785,31 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
       </main>
 
       {/* Right Column: Oversized Clock + Today's Full Schedule */}
-      <aside className="relative z-10 w-full lg:w-[380px] xl:w-[440px] 2xl:w-[480px] shrink-0 bg-slate-950/75 backdrop-blur-2xl flex flex-col justify-between p-7 sm:p-9">
-        {/* Live Clock & Date */}
+      <aside className="relative z-10 w-full lg:w-[370px] xl:w-[420px] 2xl:w-[460px] shrink-0 bg-[#050a16]/90 backdrop-blur-2xl flex flex-col justify-between p-7 sm:p-8">
+        {/* Live Clock Header */}
         <div className="border-b border-white/[0.08] pb-6">
-          <div className="flex items-baseline gap-1 font-mono tracking-tight tabular-nums">
-            <span className="text-5xl sm:text-6xl xl:text-[4rem] font-bold text-white leading-none">
-              {format(currentTime, "h:mm")}
-            </span>
-            <span className="text-2xl sm:text-3xl font-medium text-slate-500">
-              :{format(currentTime, "ss")}
-            </span>
-            <span className="ml-2 text-xl sm:text-2xl font-semibold text-indigo-300/90 uppercase">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-1 font-mono tracking-tight tabular-nums">
+              <span className="text-5xl sm:text-6xl xl:text-[4rem] font-bold text-white leading-none">
+                {format(currentTime, "h:mm")}
+              </span>
+              <span className="text-2xl sm:text-3xl font-medium text-slate-500">
+                :{format(currentTime, "ss")}
+              </span>
+            </div>
+            <span className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1 font-mono text-sm font-bold text-indigo-200 uppercase">
               {format(currentTime, "a")}
             </span>
           </div>
-          <p className="mt-2.5 text-base sm:text-lg font-medium text-slate-400">
-            {format(currentTime, "EEEE, MMMM d, yyyy")}
+          <p className="mt-3 text-base sm:text-lg font-medium text-slate-300">
+            {format(currentTime, "EEEE, MMMM d")}
+            <span className="text-slate-500">
+              , {format(currentTime, "yyyy")}
+            </span>
           </p>
         </div>
 
-        {/* Today's Schedule List (Active + Upcoming + Completed) */}
+        {/* Today's Schedule List */}
         <div className="flex-1 overflow-y-auto py-6 pr-1">
           <div className="flex items-center justify-between mb-5">
             <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
@@ -695,7 +832,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
               </p>
             </div>
           ) : (
-            <ul className="relative space-y-3.5 before:absolute before:left-[11px] before:top-3 before:bottom-3 before:w-px before:bg-white/[0.08]">
+            <ul className="space-y-3">
               {todaysMeetings.map((meeting) => {
                 const start = parseISO(meeting.start_time);
                 const end = parseISO(meeting.end_time);
@@ -708,11 +845,23 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                 const isNext = !isActive && nextMeeting?.id === meeting.id;
 
                 return (
-                  <li key={meeting.id} className="relative pl-8">
-                    <span
-                      className={`absolute left-[6px] top-5 h-2.5 w-2.5 rounded-full ring-4 ring-slate-950 ${
+                  <li
+                    key={meeting.id}
+                    className={`relative overflow-hidden rounded-2xl border p-4 pl-5 transition-all ${
+                      isActive
+                        ? "border-rose-400/35 bg-gradient-to-r from-rose-500/[0.14] to-rose-500/[0.04] shadow-[0_10px_28px_rgba(244,63,94,0.14)]"
+                        : isNext
+                        ? "border-indigo-400/30 bg-indigo-500/[0.09]"
+                        : isPast
+                        ? "border-white/[0.05] bg-white/[0.015] opacity-50"
+                        : "border-white/[0.08] bg-white/[0.03]"
+                    }`}
+                  >
+                    {/* Left Status Bar inside Card */}
+                    <div
+                      className={`absolute left-0 top-0 bottom-0 w-1 ${
                         isActive
-                          ? "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.9)]"
+                          ? "bg-gradient-to-b from-rose-400 to-orange-400"
                           : isNext
                           ? "bg-indigo-400"
                           : isPast
@@ -720,61 +869,50 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
                           : "bg-slate-500"
                       }`}
                     />
-                    <div
-                      className={`rounded-2xl border p-4 transition-all ${
-                        isActive
-                          ? "border-rose-400/35 bg-rose-500/[0.10] shadow-[0_8px_24px_rgba(244,63,94,0.12)]"
-                          : isNext
-                          ? "border-indigo-400/30 bg-indigo-500/[0.08]"
-                          : isPast
-                          ? "border-white/[0.05] bg-white/[0.015] opacity-55"
-                          : "border-white/[0.07] bg-white/[0.03]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 text-xs font-semibold mb-1.5">
-                        <span
-                          className={
-                            isActive
-                              ? "text-rose-200"
-                              : isNext
-                              ? "text-indigo-200"
-                              : "text-slate-300"
-                          }
-                        >
-                          {format(start, "h:mm a")} – {format(end, "h:mm a")}
+
+                    <div className="flex items-center justify-between gap-2 text-xs font-semibold mb-1.5">
+                      <span
+                        className={
+                          isActive
+                            ? "text-rose-100"
+                            : isNext
+                            ? "text-indigo-200"
+                            : "text-slate-300"
+                        }
+                      >
+                        {format(start, "h:mm a")} – {format(end, "h:mm a")}
+                      </span>
+
+                      {isActive ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/25 border border-rose-400/35 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-100">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
+                          In Progress
                         </span>
-
-                        {isActive ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/20 border border-rose-400/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
-                            Now
-                          </span>
-                        ) : isNext ? (
-                          <span className="rounded-full bg-indigo-500/20 border border-indigo-400/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-200">
-                            Next
-                          </span>
-                        ) : isPast ? (
-                          <span className="rounded-md bg-white/[0.05] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                            Ended
-                          </span>
-                        ) : (
-                          <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                            {formatDurationHuman(durationMins)}
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="text-base sm:text-lg font-semibold text-white leading-snug">
-                        {meeting.title}
-                      </h3>
-
-                      {meeting.requested_by_name && (
-                        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400">
-                          <User className="h-3.5 w-3.5 text-slate-500" />
-                          {meeting.requested_by_name}
-                        </p>
+                      ) : isNext ? (
+                        <span className="rounded-full bg-indigo-500/20 border border-indigo-400/30 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-200">
+                          Next Up
+                        </span>
+                      ) : isPast ? (
+                        <span className="rounded-md bg-white/[0.05] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                          Ended
+                        </span>
+                      ) : (
+                        <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                          {formatDurationHuman(durationMins)}
+                        </span>
                       )}
                     </div>
+
+                    <h3 className="text-base sm:text-lg font-semibold text-white leading-snug">
+                      {meeting.title}
+                    </h3>
+
+                    {meeting.requested_by_name && (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400">
+                        <User className="h-3.5 w-3.5 text-slate-500" />
+                        {meeting.requested_by_name}
+                      </p>
+                    )}
                   </li>
                 );
               })}
@@ -782,21 +920,35 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
           )}
         </div>
 
-        {/* Bottom-Right Subtle Admin Unlock Trigger */}
+        {/* Bottom Subtle Controls: Fullscreen + Admin Unlock */}
         <div className="flex items-center justify-between pt-4 border-t border-white/[0.08]">
           <span className="text-xs text-slate-500">
             {todaysMeetings.length}{" "}
             {todaysMeetings.length === 1 ? "booking" : "bookings"} today
           </span>
-          <button
-            type="button"
-            onClick={() => setUnlockOpen(true)}
-            title="Admin unlock (switch room)"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 opacity-35 hover:opacity-100 hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer"
-          >
-            <Lock className="h-3.5 w-3.5" />
-            Admin
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void toggleFullscreen()}
+              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 opacity-35 hover:opacity-100 hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer"
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnlockOpen(true)}
+              title="Admin unlock (switch room)"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 opacity-35 hover:opacity-100 hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              Admin
+            </button>
+          </div>
         </div>
       </aside>
 

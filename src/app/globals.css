@@ -20,13 +20,30 @@ body {
 
 /* Architectural subtle dot grid overlay for signage depth */
 .kiosk-grid-bg {
-  background-image: radial-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
-/* Subtle custom scrollbar for upcoming meetings list */
+/* Gentle breathing ambient glow for digital signage */
+@keyframes kiosk-breathe {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+.animate-kiosk-breathe {
+  animation: kiosk-breathe 9s ease-in-out infinite;
+}
+
+/* Subtle custom scrollbar for schedule list */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -34,10 +51,10 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.22);
+  background: rgba(148, 163, 184, 0.2);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.38);
 }
