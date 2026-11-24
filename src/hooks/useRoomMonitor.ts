@@ -15,22 +15,34 @@ export interface RoomMonitorState {
   room: ConferenceRoom | null;
   meetings: ConferenceRoomRequest[];
   isLoading: boolean;
+  isLive: boolean;
   isReconnecting: boolean;
   error: string | null;
   lastSyncedAt: Date | null;
   refresh: () => Promise<void>;
 }
 
-const POLL_INTERVAL_MS = 60_000;
+const FALLBACK_POLL_INTERVAL_MS = 60_000;
 
 export function useRoomMonitor(roomId: number): RoomMonitorState {
   const [room, setRoom] = useState<ConferenceRoom | null>(null);
   const [meetings, setMeetings] = useState<ConferenceRoomRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const hasLoadedOnce = useRef(false);
+
+  const applySchedulePayload = useCallback((json: ScheduleResponse) => {
+    setRoom(json.room);
+    setMeetings(Array.isArray(json.data) ? json.data : []);
+    setError(null);
+    setIsReconnecting(false);
+    setLastSyncedAt(json.fetchedAt ? new Date(json.fetchedAt) : new Date());
+    setIsLoading(false);
+    hasLoadedOnce.current = true;
+  }, []);
 
   const fetchSchedule = useCallback(async () => {
     try {
@@ -43,74 +55,112 @@ export function useRoomMonitor(roomId: number): RoomMonitorState {
         throw new Error(json.error || `HTTP ${res.status}`);
       }
 
-      setRoom(json.room);
-      setMeetings(Array.isArray(json.data) ? json.data : []);
-      setError(null);
-      setIsReconnecting(false);
-      setLastSyncedAt(json.fetchedAt ? new Date(json.fetchedAt) : new Date());
-      hasLoadedOnce.current = true;
+      applySchedulePayload(json);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unable to reach schedule server";
       setError(message);
       if (hasLoadedOnce.current) {
-        // Keep displaying last known schedule with subtle reconnecting badge
         setIsReconnecting(true);
       }
-    } finally {
       setIsLoading(false);
     }
-  }, [roomId]);
+  }, [roomId, applySchedulePayload]);
 
   useEffect(() => {
     let active = true;
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryDelayMs = 2000;
 
-    async function poll() {
+    const connectStream = () => {
+      if (!active) return;
+
       try {
-        const res = await fetch(`/api/kiosk/rooms/${roomId}/schedule`, {
-          cache: "no-store",
+        eventSource = new EventSource(`/api/kiosk/rooms/${roomId}/stream`);
+
+        eventSource.addEventListener("schedule", (ev) => {
+          if (!active) return;
+          try {
+            const payload = JSON.parse(ev.data) as ScheduleResponse;
+            if (payload.success) {
+              retryDelayMs = 2000;
+              applySchedulePayload(payload);
+            }
+          } catch {
+            // ignore malformed frames
+          }
         });
-        const json = (await res.json()) as ScheduleResponse;
-        if (!active) return;
 
-        if (!res.ok || !json.success) {
-          throw new Error(json.error || `HTTP ${res.status}`);
-        }
+        eventSource.addEventListener("status", (ev) => {
+          if (!active) return;
+          try {
+            const payload = JSON.parse(ev.data) as {
+              live?: boolean;
+              error?: string;
+            };
+            if (typeof payload.live === "boolean") {
+              setIsLive(payload.live);
+            }
+          } catch {
+            // ignore malformed status frames
+          }
+        });
 
-        setRoom(json.room);
-        setMeetings(Array.isArray(json.data) ? json.data : []);
-        setError(null);
-        setIsReconnecting(false);
-        setLastSyncedAt(json.fetchedAt ? new Date(json.fetchedAt) : new Date());
-        hasLoadedOnce.current = true;
-      } catch (err) {
-        if (!active) return;
-        const message =
-          err instanceof Error ? err.message : "Unable to reach schedule server";
-        setError(message);
-        if (hasLoadedOnce.current) {
-          setIsReconnecting(true);
-        }
-      } finally {
-        if (active) setIsLoading(false);
+        eventSource.onerror = () => {
+          if (!active) return;
+          setIsLive(false);
+          if (hasLoadedOnce.current) {
+            setIsReconnecting(true);
+          }
+          eventSource?.close();
+          eventSource = null;
+
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => {
+            retryDelayMs = Math.min(retryDelayMs * 1.5, 30_000);
+            connectStream();
+          }, retryDelayMs);
+        };
+      } catch {
+        setIsLive(false);
       }
-    }
+    };
 
-    void poll();
-    const interval = setInterval(() => {
-      void poll();
-    }, POLL_INTERVAL_MS);
+    connectStream();
+
+    // Safety-net 60s background poll in case WebSocket/SSE is blocked by a proxy
+    const pollInterval = setInterval(() => {
+      if (!active) return;
+      void fetch(`/api/kiosk/rooms/${roomId}/schedule`, { cache: "no-store" })
+        .then((res) => res.json() as Promise<ScheduleResponse>)
+        .then((json) => {
+          if (!active) return;
+          if (json.success) {
+            applySchedulePayload(json);
+          }
+        })
+        .catch(() => {
+          if (!active) return;
+          if (hasLoadedOnce.current) {
+            setIsReconnecting(true);
+          }
+        });
+    }, FALLBACK_POLL_INTERVAL_MS);
 
     return () => {
       active = false;
-      clearInterval(interval);
+      clearInterval(pollInterval);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      eventSource?.close();
     };
-  }, [roomId]);
+  }, [roomId, applySchedulePayload]);
 
   return {
     room,
     meetings,
     isLoading,
+    isLive,
     isReconnecting,
     error,
     lastSyncedAt,

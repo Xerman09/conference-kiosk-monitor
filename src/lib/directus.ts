@@ -7,7 +7,7 @@ import {
   type ConferenceRoomRequest,
 } from "./types";
 
-interface DirectusHostConfig {
+export interface DirectusHostConfig {
   url: string;
   token: string;
 }
@@ -172,6 +172,12 @@ async function fetchApprovedRequestsFromHost(
     .map((parsed) => parsed.data);
 }
 
+export async function getDirectusTargets(): Promise<DirectusHostConfig[]> {
+  const local = getLocalDirectusConfig();
+  const host = await resolveConferenceHost();
+  return host.url !== local.url ? [local, host] : [local];
+}
+
 /**
  * Fetches approved bookings for a specific room starting from a safe window
  * around today (yesterday 00:00 + buffer to avoid timezone edge cutoffs).
@@ -181,17 +187,13 @@ async function fetchApprovedRequestsFromHost(
 export async function getRoomApprovedSchedule(
   roomId: number
 ): Promise<ConferenceRoomRequest[]> {
-  const local = getLocalDirectusConfig();
-  const host = await resolveConferenceHost();
+  const targets = await getDirectusTargets();
 
   const windowStart = new Date();
   windowStart.setHours(0, 0, 0, 0);
   // Subtract 12 hours as a timezone-safety buffer for server vs. kiosk TZ
   windowStart.setTime(windowStart.getTime() - 12 * 60 * 60 * 1000);
   const startFilter = windowStart.toISOString();
-
-  const targets: DirectusHostConfig[] =
-    host.url !== local.url ? [local, host] : [local];
 
   const settled = await Promise.allSettled(
     targets.map((cfg) => fetchApprovedRequestsFromHost(cfg, roomId, startFilter))

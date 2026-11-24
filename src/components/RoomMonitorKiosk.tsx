@@ -30,6 +30,7 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
     room,
     meetings,
     isLoading,
+    isLive,
     isReconnecting,
     error,
     lastSyncedAt,
@@ -324,10 +325,20 @@ export function RoomMonitorKiosk({ roomId }: RoomMonitorKioskProps) {
 
         {/* Bottom Subtle Footer */}
         <footer className="flex items-center justify-between text-xs text-slate-500">
-          <span>
-            {lastSyncedAt
-              ? `Synced ${format(lastSyncedAt, "h:mm:ss a")} · Auto-refreshes every 60s`
-              : "Connecting to schedule service..."}
+          <span className="inline-flex items-center gap-2">
+            {isLive && !isReconnecting && (
+              <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                Live
+              </span>
+            )}
+            <span>
+              {lastSyncedAt
+                ? `Synced ${format(lastSyncedAt, "h:mm:ss a")} · ${
+                    isLive ? "Real-time WebSocket" : "Auto-refreshes every 60s"
+                  }`
+                : "Connecting to schedule service..."}
+            </span>
           </span>
           <span className="hidden sm:inline">Room ID #{roomId}</span>
         </footer>
