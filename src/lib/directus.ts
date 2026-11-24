@@ -144,22 +144,11 @@ export async function getConferenceRooms(): Promise<ConferenceRoom[]> {
     .map((parsed) => parsed.data);
 }
 
-/**
- * Fetches approved bookings for a specific room starting from a safe window
- * around today (yesterday 00:00 UTC to avoid timezone edge cutoffs) so payloads
- * stay small even with years of historical bookings.
- */
-export async function getRoomApprovedSchedule(
-  roomId: number
+async function fetchApprovedRequestsFromHost(
+  config: DirectusHostConfig,
+  roomId: number,
+  startFilter: string
 ): Promise<ConferenceRoomRequest[]> {
-  const host = await resolveConferenceHost();
-
-  const windowStart = new Date();
-  windowStart.setHours(0, 0, 0, 0);
-  // Subtract 12 hours as a timezone-safety buffer for server vs. kiosk TZ
-  windowStart.setTime(windowStart.getTime() - 12 * 60 * 60 * 1000);
-  const startFilter = windowStart.toISOString();
-
   const params = new URLSearchParams();
   params.set("filter[room_id][_eq]", String(roomId));
   params.set("filter[status][_eq]", "approved");
@@ -168,7 +157,7 @@ export async function getRoomApprovedSchedule(
   params.set("limit", "100");
 
   const rows = await directusFetch<unknown[]>(
-    host,
+    config,
     `/items/conference_room_request?${params.toString()}`
   );
 
@@ -181,6 +170,60 @@ export async function getRoomApprovedSchedule(
         parsed.success && parsed.data.status.toLowerCase() === "approved"
     )
     .map((parsed) => parsed.data);
+}
+
+/**
+ * Fetches approved bookings for a specific room starting from a safe window
+ * around today (yesterday 00:00 + buffer to avoid timezone edge cutoffs).
+ * Queries the local Directus instance and, if a distinct centralized host
+ * Directus is configured via `general_setting`, merges unique records from both.
+ */
+export async function getRoomApprovedSchedule(
+  roomId: number
+): Promise<ConferenceRoomRequest[]> {
+  const local = getLocalDirectusConfig();
+  const host = await resolveConferenceHost();
+
+  const windowStart = new Date();
+  windowStart.setHours(0, 0, 0, 0);
+  // Subtract 12 hours as a timezone-safety buffer for server vs. kiosk TZ
+  windowStart.setTime(windowStart.getTime() - 12 * 60 * 60 * 1000);
+  const startFilter = windowStart.toISOString();
+
+  const targets: DirectusHostConfig[] =
+    host.url !== local.url ? [local, host] : [local];
+
+  const settled = await Promise.allSettled(
+    targets.map((cfg) => fetchApprovedRequestsFromHost(cfg, roomId, startFilter))
+  );
+
+  const combined: ConferenceRoomRequest[] = [];
+  const seen = new Set<string>();
+  let anySucceeded = false;
+  let lastError: unknown = null;
+
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      anySucceeded = true;
+      for (const req of result.value) {
+        const key = `${req.room_id}|${req.start_time}|${req.end_time}|${req.title}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(req);
+        }
+      }
+    } else {
+      lastError = result.reason;
+    }
+  }
+
+  if (!anySucceeded && lastError) {
+    throw lastError;
+  }
+
+  return combined.sort(
+    (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+  );
 }
 
 function isTruthyBit(
